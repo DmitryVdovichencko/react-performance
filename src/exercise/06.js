@@ -10,7 +10,8 @@ import {
   updateGridCellState,
 } from '../utils'
 
-const AppStateContext = React.createContext()
+const AppGridStateContext = React.createContext()
+const DogNameStateContext = React.createContext()
 const AppDispatchContext = React.createContext()
 
 const initialGrid = Array.from({length: 100}, () =>
@@ -19,8 +20,6 @@ const initialGrid = Array.from({length: 100}, () =>
 
 function appReducer(state, action) {
   switch (action.type) {
-    // we're no longer managing the dogName state in our reducer
-    // 💣 remove this case
     case 'TYPED_IN_DOG_INPUT': {
       return {...state, dogName: action.dogName}
     }
@@ -36,24 +35,48 @@ function appReducer(state, action) {
   }
 }
 
+function dogReducer(state, action) {
+  switch (action.type) {
+    case 'TYPED_IN_DOG_INPUT': {
+      return {...state, dogName: action.dogName}
+    }
+    default: {
+      throw new Error(`Unhandled action type: ${action.type}`)
+    }
+  }
+}
 function AppProvider({children}) {
   const [state, dispatch] = React.useReducer(appReducer, {
-    // 💣 remove the dogName state because we're no longer managing that
     dogName: '',
     grid: initialGrid,
   })
+  const {grid} = state
   return (
-    <AppStateContext.Provider value={state}>
+    <AppGridStateContext.Provider value={grid}>
       <AppDispatchContext.Provider value={dispatch}>
         {children}
       </AppDispatchContext.Provider>
-    </AppStateContext.Provider>
+    </AppGridStateContext.Provider>
   )
 }
+function DogProvider(props) {
+  const [state, dispatch] = React.useReducer(dogReducer, {
+    dogName: '',
+  })
+  return <DogNameStateContext.Provider value={[state, dispatch]} {...props} />
+}
 
-function useAppState() {
-  const context = React.useContext(AppStateContext)
+function useAppGridState() {
+  const context = React.useContext(AppGridStateContext)
   if (!context) {
+    throw new Error('useAppState must be used within the AppProvider')
+  }
+  return context
+}
+
+function useDogName() {
+  const context = React.useContext(DogNameStateContext)
+  if (context === null || context === undefined) {
     throw new Error('useAppState must be used within the AppProvider')
   }
   return context
@@ -85,11 +108,7 @@ function Grid() {
 }
 Grid = React.memo(Grid)
 
-function Cell({row, column}) {
-  const state = useAppState()
-  const cell = state.grid[row][column]
-  const dispatch = useAppDispatch()
-  const handleClick = () => dispatch({type: 'UPDATE_GRID_CELL', row, column})
+function CellImpl({cell, handleClick}) {
   return (
     <button
       className="cell"
@@ -103,15 +122,26 @@ function Cell({row, column}) {
     </button>
   )
 }
-Cell = React.memo(Cell)
+function Cell({row, column}) {
+  const grid = useAppGridState()
+  const cell = grid[row][column]
+  const dispatch = useAppDispatch()
+  const handleClick = React.useCallback(
+    () => dispatch({type: 'UPDATE_GRID_CELL', row, column}),
+    [row, column, dispatch],
+  )
+  return <CellImpl cell={cell} handleClick={handleClick} />
+}
+
+function withStateSlice({stateSlice}) {}
+
+CellImpl = React.memo(CellImpl)
 
 function DogNameInput() {
   // 🐨 replace the useAppState and useAppDispatch with a normal useState here
   // to manage the dogName locally within this component
-  const state = useAppState()
-  const dispatch = useAppDispatch()
+  const [state, dispatch] = useDogName()
   const {dogName} = state
-
   function handleChange(event) {
     const newDogName = event.target.value
     // 🐨 change this to call your state setter that you get from useState
@@ -140,9 +170,11 @@ function App() {
   return (
     <div className="grid-app">
       <button onClick={forceRerender}>force rerender</button>
+			<DogProvider>
+      	<DogNameInput />
+			</DogProvider>
       <AppProvider>
         <div>
-          <DogNameInput />
           <Grid />
         </div>
       </AppProvider>
